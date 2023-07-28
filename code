@@ -1,50 +1,83 @@
-import torch
-import torchvision
-from torchvision import transforms
-from torch.utils.data import DataLoader
-from torchvision.datasets import ImageFolder
-from torchvision.models import resnet18
-from torch.nn import functional as F
-from tqdm import tqdm
-import numpy as np
-import matplotlib.pyplot as plt
+import tensorflow as tf
+from tensorflow.keras import layers
 
-transform = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
-    transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-])
+# Define the generator model
+def build_generator():
+    model = tf.keras.Sequential()
+    # Add layers to the generator model
+    # Example:
+    model.add(layers.Dense(256, input_dim=latent_dim, activation='relu'))
+    model.add(layers.Dense(512, activation='relu'))
+    model.add(layers.Dense(1024, activation='relu'))
+    model.add(layers.Dense(output_shape, activation='tanh'))
+    return model
 
-dataset = ImageFolder('data/real_estate', transform=transform)
+# Define the discriminator model
+def build_discriminator():
+    model = tf.keras.Sequential()
+    # Add layers to the discriminator model
+    # Example:
+    model.add(layers.Dense(512, input_dim=input_shape, activation='relu'))
+    model.add(layers.Dense(256, activation='relu'))
+    model.add(layers.Dense(1, activation='sigmoid'))
+    return model
 
-dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
+# Define the loss functions for the generator and discriminator
+def generator_loss(fake_output):
+    # Define the generator loss function
+    # Example: binary cross-entropy
+    return tf.keras.losses.BinaryCrossentropy()(tf.ones_like(fake_output), fake_output)
 
-model = resnet18(pretrained=True)
-model.fc = torch.nn.Linear(512, 10)
+def discriminator_loss(real_output, fake_output):
+    # Define the discriminator loss function
+    # Example: binary cross-entropy
+    real_loss = tf.keras.losses.BinaryCrossentropy()(tf.ones_like(real_output), real_output)
+    fake_loss = tf.keras.losses.BinaryCrossentropy()(tf.zeros_like(fake_output), fake_output)
+    return real_loss + fake_loss
 
-loss_fn = torch.nn.CrossEntropyLoss()
+# Define the optimizer for the generator and discriminator
+generator_optimizer = tf.keras.optimizers.Adam()
+discriminator_optimizer = tf.keras.optimizers.Adam()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# Define the training loop
+def train(images, epochs, batch_size, latent_dim):
+    generator = build_generator()
+    discriminator = build_discriminator()
 
-for epoch in range(10):
-    for i, (images, labels) in enumerate(tqdm(dataloader)):
-        
-        optimizer.zero_grad()
-        
-        outputs = model(images)
-        
-        loss = loss_fn(outputs, labels)
-        
-        loss.backward()
-        
-        optimizer.step()
+    for epoch in range(epochs):
+        for i in range(len(images) // batch_size):
+            # Select a random batch of real images
+            real_images = images[i * batch_size: (i + 1) * batch_size]
 
-torch.save(model.state_dict(), 'model.pth')
+            # Generate a batch of fake images
+            noise = tf.random.normal([batch_size, latent_dim])
+            generated_images = generator(noise)
 
-prompt = 'A photo of a modern house with a pool'
+            # Concatenate real and fake images for training the discriminator
+            combined_images = tf.concat([real_images, generated_images], axis=0)
 
-image = model.generate(prompt)
+            # Create labels for the discriminator
+            real_labels = tf.ones((batch_size, 1))
+            fake_labels = tf.zeros((batch_size, 1))
+            labels = tf.concat([real_labels, fake_labels], axis=0)
 
-plt.imshow(image)
-plt.show()
+            # Train the discriminator
+            with tf.GradientTape() as disc_tape:
+                real_output = discriminator(real_images)
+                fake_output = discriminator(generated_images)
+
+                disc_loss = discriminator_loss(real_output, fake_output)
+
+            gradients_of_discriminator = disc_tape.gradient(disc_loss, discriminator.trainable_variables)
+            discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, discriminator.trainable_variables))
+
+            # Train the generator
+            with tf.GradientTape() as gen_tape:
+                fake_output = discriminator(generated_images)
+                gen_loss = generator_loss(fake_output)
+
+            gradients_of_generator = gen_tape.gradient(gen_loss, generator.trainable_variables)
+            generator_optimizer.apply_gradients(zip(gradients_of_generator, generator.trainable_variables))
+
+# Example usage:
+# train(images, epochs=100, batch_size=16, latent_dim=100)
